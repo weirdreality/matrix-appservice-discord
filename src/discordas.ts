@@ -206,6 +206,7 @@ async function run(): Promise<void> {
     }
 
     appservice.on("room.event", async (roomId: string, event: IMatrixEvent) => {
+        log.verbose(`received event ${event.event_id} from room ${roomId}`);
         try {
             const entries = await store.roomStore.getEntriesByMatrixId(roomId);
             await eventProcessor.OnEvent(event, entries);

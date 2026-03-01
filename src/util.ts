@@ -75,7 +75,7 @@ export class Util {
             const req = get((url), (res) => {
                 let buffer = Buffer.alloc(0);
                 if (res.statusCode !== HTTP_OK) {
-                    reject(`Non 200 status code (${res.statusCode})`);
+                    reject(`Non 200 status code (${res.statusCode}) for ${url}`);
                 }
 
                 res.on("data", (d) => {
@@ -93,6 +93,21 @@ export class Util {
                 reject(`Failed to download. ${err}`);
             });
         }) as Promise<IDownloadedFile>;
+    }
+
+    public static async DownloadMatrixFile(client: MatrixClient, mxcUrl: string, allowRemote = true): Promise<IDownloadedFile> {
+        if (!mxcUrl.toLowerCase().startsWith("mxc://")) {
+            throw Error("'mxcUrl' does not begin with mxc://");
+        }
+        const urlParts = mxcUrl.substring("mxc://".length).split("/");
+        const domain = encodeURIComponent(urlParts[0]);
+        const mediaId = encodeURIComponent(urlParts[1].split("/")[0]);
+        const path = `/_matrix/client/v1/media/download/${domain}/${mediaId}`;
+        const res = await client.doRequest("GET", path, { allow_remote: allowRemote }, null, undefined, true, undefined, true);
+        return {
+            buffer: res.body,
+            mimeType: res.headers["content-type"],
+        };
     }
 
     /**

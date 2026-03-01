@@ -96,6 +96,7 @@ export class MatrixEventProcessor {
             log.info(`Skipping event due to age ${age} > ${AGE_LIMIT}`);
             return;
         }
+        log.verbose(`received event ${event.event_id} of type ${event.type}`);
         if (
             event.type === "m.room.member" &&
             event.content!.membership === "invite" &&
@@ -324,6 +325,22 @@ export class MatrixEventProcessor {
         };
     }
 
+    // new version of MatrixClient.downloadContent from matrix-bot-sdk
+    public async downloadContent(client: MatrixClient, mxcUrl: string, allowRemote = true): Promise<{ data: Buffer, contentType: string }> {
+        if (!mxcUrl.toLowerCase().startsWith("mxc://")) {
+            throw Error("'mxcUrl' does not begin with mxc://");
+        }
+        const urlParts = mxcUrl.substring("mxc://".length).split("/");
+        const domain = encodeURIComponent(urlParts[0]);
+        const mediaId = encodeURIComponent(urlParts[1].split("/")[0]);
+        const path = `/_matrix/client/v1/media/download/${domain}/${mediaId}`;
+        const res = await client.doRequest("GET", path, { allow_remote: allowRemote }, null, undefined, true, undefined, true);
+        return {
+            data: res.body,
+            contentType: res.headers["content-type"],
+        };
+    }
+
     public async HandleAttachment(
         event: IMatrixEvent,
         mxClient: MatrixClient,
@@ -352,19 +369,28 @@ export class MatrixEventProcessor {
         const name = this.GetFilenameForMediaEvent(event.content);
         const url = this.bridge.botClient.mxcToHttp(event.content.url);
         if (size < MaxFileSize) {
-            const attachment = (await Util.DownloadFile(url)).buffer;
-            size = attachment.byteLength;
-            if (size < MaxFileSize) {
-                return {
-                    attachment,
-                    name,
-                } as Discord.FileOptions;
+            let retry = false;
+            //await this.bridge.botClient.doRequest("GET", "/_matrix/client/v3/rooms/" + event.room_id + "/event/" + event.event_id).catch(err => console.log(err));
+            //console.log(["this.bridge.botClient.impersonatedUserId", "this.bridge.botClient.impersonatedDeviceId", this.bridge.botClient.accessToken]);
+            let downloaded = await this.downloadContent(this.bridge.botClient, event.content.url).catch(a => {
+                console.log(a);
+                return null;
+            });
+            if (downloaded) {
+                const attachment = downloaded.data;
+                size = attachment.byteLength;
+                if (size < MaxFileSize) {
+                    return {
+                        attachment,
+                        name,
+                    } as Discord.FileOptions;
+                }
             }
         }
-        if (sendEmbeds && event.content.info.mimetype.split("/")[0] === "image") {
+        /*if (sendEmbeds && event.content.info.mimetype.split("/")[0] === "image") {
             return new Discord.MessageEmbed()
                 .setImage(url);
-        }
+        }*/
         return `[${name}](${url})`;
     }
 
